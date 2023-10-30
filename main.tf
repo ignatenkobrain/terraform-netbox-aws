@@ -2,11 +2,11 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.22.0"
+      version = "~> 5.22"
     }
     ns1 = {
       source  = "ns1-terraform/ns1"
-      version = "~> 2.0.10"
+      version = "~> 2.0"
     }
   }
 }
@@ -27,7 +27,7 @@ data "aws_availability_zones" "available" {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.1.2"
+  version = "~> 5.1"
 
   name                = "netbox"
   cidr                = local.vpc_cidr
@@ -55,7 +55,7 @@ module "vpc" {
 
 module "db_password" {
   source  = "terraform-aws-modules/secrets-manager/aws"
-  version = "~> 1.1.1"
+  version = "~> 1.1"
 
   name_prefix = "netbox-db-password-"
 
@@ -73,7 +73,7 @@ data "aws_secretsmanager_secret_version" "db_password" {
 
 module "db" {
   source  = "terraform-aws-modules/rds/aws"
-  version = "~> 6.2.0"
+  version = "~> 6.2"
 
   identifier = "netbox"
 
@@ -83,7 +83,7 @@ module "db" {
   storage_type      = "gp3"
   allocated_storage = 20
 
-  availability_zone = module.vpc.azs[0]
+  availability_zone  = module.vpc.azs[0]
   maintenance_window = "Mon:00:00-Mon:01:00"
 
   username                            = "netbox"
@@ -113,7 +113,7 @@ resource "aws_elasticache_cluster" "redis" {
   num_cache_nodes      = 1
   parameter_group_name = "default.redis7"
 
-  availability_zone = module.vpc.azs[0]
+  availability_zone  = module.vpc.azs[0]
   maintenance_window = "Mon:00:00-Mon:01:00"
 
   subnet_group_name  = module.vpc.elasticache_subnet_group_name
@@ -126,7 +126,7 @@ data "ns1_zone" "pcigdc_com" {
 
 module "ssl_cert" {
   source  = "terraform-aws-modules/acm/aws"
-  version = "~> 5.0.0"
+  version = "~> 5.0"
 
   domain_name = local.domain
   zone_id     = data.ns1_zone.pcigdc_com.zone
@@ -153,11 +153,11 @@ resource "ns1_record" "ssl_cert_validation" {
 
 module "lb" {
   source  = "terraform-aws-modules/alb/aws"
-  version = "~> 9.0.0"
+  version = "~> 9.0"
 
   name    = "netbox"
   vpc_id  = module.vpc.vpc_id
-  subnets = [module.vpc.public_subnets[0]]
+  subnets = module.vpc.public_subnets
 
   security_groups = [module.vpc.default_security_group_id]
   security_group_ingress_rules = {
@@ -209,7 +209,7 @@ module "lb" {
 
 module "secret_key" {
   source  = "terraform-aws-modules/secrets-manager/aws"
-  version = "~> 1.1.1"
+  version = "~> 1.1"
 
   name_prefix = "netbox-secret-key-"
 
@@ -223,7 +223,7 @@ module "secret_key" {
 
 module "app" {
   source  = "terraform-aws-modules/ecs/aws"
-  version = "~> 5.2.2"
+  version = "~> 5.2"
 
   cluster_name = "netbox"
 
