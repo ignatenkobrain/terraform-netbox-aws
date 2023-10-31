@@ -43,13 +43,11 @@ module "vpc" {
     {
       self = true
     },
-    { from_port = 22, to_port = 22, cidr_blocks = "0.0.0.0/0", protocol = "tcp" }, # TODO
   ]
   default_security_group_egress = [
     {
       self = true
     },
-    { cidr_blocks = "0.0.0.0/0" }, # TODO
   ]
 }
 
@@ -221,62 +219,66 @@ module "secret_key" {
   recovery_window_in_days = 7
 }
 
-module "app" {
-  source  = "terraform-aws-modules/ecs/aws"
+module "ecs_cluster" {
+  source  = "terraform-aws-modules/ecs/aws//modules/cluster"
   version = "~> 5.2"
 
   cluster_name = "netbox"
 
   cloudwatch_log_group_retention_in_days = 1
+}
 
-  services = {
+module "app" {
+  source  = "terraform-aws-modules/ecs/aws//modules/service"
+  version = "~> 5.2"
+
+  cluster_arn = module.ecs_cluster.arn
+  name        = "netbox"
+
+  runtime_platform = {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+  assign_public_ip   = true
+  enable_autoscaling = false
+  security_group_ids = [
+    module.vpc.default_security_group_id,
+  ]
+  security_group_rules = {
+    "allow-internet" = { # to fetch image
+      type        = "egress"
+      protocol    = "all"
+      cidr_blocks = ["0.0.0.0/0"]
+      from_port   = 0
+      to_port     = 0
+    }
+  }
+  subnet_ids = [module.vpc.public_subnets[0]]
+  container_definitions = {
     netbox = {
-      runtime_platform = {
-        operating_system_family = "LINUX"
-        cpu_architecture        = "ARM64"
-      }
-      assign_public_ip   = true
-      enable_autoscaling = false
-      security_group_ids = [
-        module.vpc.default_security_group_id,
+      readonly_root_filesystem = false
+      essential                = true
+      image                    = "docker.io/netboxcommunity/netbox:${local.netbox_docker_version}"
+      port_mappings = [
+        { name = "http", containerPort = 8080, protocol = "tcp" },
       ]
-      security_group_rules = {
-        "allow-internet" = { # to fetch image
-          type        = "egress"
-          protocol    = "all"
-          cidr_blocks = ["0.0.0.0/0"]
-          from_port   = 0
-          to_port     = 0
-        }
-      }
-      subnet_ids = [module.vpc.public_subnets[0]]
-      container_definitions = {
-        netbox = {
-          readonly_root_filesystem = false
-          essential                = true
-          image                    = "docker.io/netboxcommunity/netbox:${local.netbox_docker_version}"
-          port_mappings = [
-            { name = "http", containerPort = 8080, protocol = "tcp" },
-          ]
-          environment = [
-            { name = "DB_HOST", value = module.db.db_instance_address },
-            { name = "DB_USER", value = "netbox" },
-            { name = "DB_NAME", value = "netbox" },
-            { name = "REDIS_HOST", value = aws_elasticache_cluster.redis.cache_nodes[0].address },
-          ]
-          secrets = [
-            { name = "DB_PASSWORD", valueFrom = module.db_password.secret_arn },
-            { name = "SECRET_KEY", valueFrom = module.secret_key.secret_arn },
-          ]
-        }
-      }
-      load_balancer = {
-        service = {
-          container_name   = "netbox"
-          container_port   = 8080
-          target_group_arn = module.lb.target_groups["instance"].arn
-        }
-      }
+      environment = [
+        { name = "DB_HOST", value = module.db.db_instance_address },
+        { name = "DB_USER", value = "netbox" },
+        { name = "DB_NAME", value = "netbox" },
+        { name = "REDIS_HOST", value = aws_elasticache_cluster.redis.cache_nodes[0].address },
+      ]
+      secrets = [
+        { name = "DB_PASSWORD", valueFrom = module.db_password.secret_arn },
+        { name = "SECRET_KEY", valueFrom = module.secret_key.secret_arn },
+      ]
+    }
+  }
+  load_balancer = {
+    service = {
+      container_name   = "netbox"
+      container_port   = 8080
+      target_group_arn = module.lb.target_groups["instance"].arn
     }
   }
 }
